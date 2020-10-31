@@ -381,7 +381,7 @@ const output_before_current_list = 5;
 const truncate_input = 10;
 
 function timer_calculate() {
-    let input = input_box.value;
+    let input = input_box.value.replaceAll(" ", "");
     if (input.length > truncate_input) {
         input = input.substr(input.length - truncate_input);
     }
