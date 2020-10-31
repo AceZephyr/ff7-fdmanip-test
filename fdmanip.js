@@ -441,7 +441,7 @@ function timer_calculate() {
             console.log("fd manip for new lowest: " + battle_count);
             let fd_route = route_fd_for_increment(fields_list, path_names, initial_sl, field_delays, i - output_before_current_list);
             if (fd_route !== null && fd_route !== false) {
-                let fd_route_text = `${battle_count}: ${fields[fd_route[3]].name}${path_names[fd_route[3]]}: Wait ${(fd_route[0] / 30).toFixed(2)}-${((fd_route[0] + fd_route[1]) / 30).toFixed(2)} sec. (${fd_route[0]}-${fd_route[0] + fd_route[1]} frames)`;
+                let fd_route_text = `${battle_count}: ${fields[fd_route[3]].name}${path_names[fd_route[3]]}: Wait ${(fd_route[0] / 30).toFixed(2)}-${((fd_route[0] + fd_route[1] - 1) / 30).toFixed(2)} sec. (${fd_route[0]}-${fd_route[0] + fd_route[1] - 1} frames)`;
                 let manip_list_item = $("<li>");
                 manip_list_item.text(fd_route_text);
                 manip_list.append(manip_list_item);
