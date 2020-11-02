@@ -153,43 +153,100 @@ function process_field(field, path_name, stone_list, delay) {
     if (last_delay === null) {
         last_delay = Math.min(...anim_timers.map(x => Math.abs(x)));
     }
-    return [[stone, curr_list], null, increments, last_delay];
+    // return [[stone, curr_list], null, increments, last_delay];
+    return {
+        "stone_list": [stone, curr_list],
+        "increments": increments,
+        "last_delay": last_delay
+    };
+}
+// manip data is [starting frame, window length, increments away from target, field index, prev field data]
+
+function route_length(route) {
+    let len = 0;
+    for (let i = 0; i < route.length; i++) {
+        len += route[i].start;
+    }
+    return len;
 }
 
-function route_fd_for_increment(fields, path_names, stone_list, field_delays, target_increment) {
+function fix_lengths(route, fields, target_increment, start_index = 0) { // sometimes, the full length of a step won't work because it joins multiple increments that each work on their own, but in the full route, not all work. the first increment of each step will always work.
+    if (route.length - start_index <= 1) {
+        return route;
+    }
+    let first_field_increment = route[start_index].increments;
+    for (let i = start_index; i < route[start_index].current_field_increment_frames.length; i++) {
+        let asdf = process_field(fields[route[start_index].field], route[start_index].path_name, route[start_index].start_sl, route[start_index].current_field_increment_frames[i]);
+        let increments = asdf.increments;
+        let stone_list = asdf.stone_list;
+        for (let j = 1; j < route.length; j++) {
+            asdf = process_field(fields[route[j].field], route[j].path_name, stone_list, route[j].start);
+            increments += asdf.increments;
+            stone_list = asdf.stone_list;
+        }
+        if (increments !== target_increment) { // doesn't work! after this frame is the end of the window that works.
+            route[start_index].length = route[start_index].current_field_increment_frames[i] - route[start_index].start;
+            break;
+        }
+    }
+    return fix_lengths(route, fields, target_increment - first_field_increment, start_index + 1);
+}
+
+function route_alts(possible_alts, fields, path_names, stone_list, field_delays, target_increment) {
+    let best_alt = null;
+    for (let i = 0; i < possible_alts.length; i++) {
+        let field = possible_alts[i][0];
+        let this_alt_field_delays = [...field_delays];
+        let this_alt_target_increment = target_increment;
+        let this_alt_start_field = field.field;
+        this_alt_field_delays[field.field] += field.start;
+        this_alt_target_increment = field.increments_off;
+        let alt_route = route_fd_for_increment(fields, path_names, stone_list, this_alt_field_delays, this_alt_target_increment, null, this_alt_start_field);
+        alt_route.unshift(field);
+        if (best_alt === null || route_length(alt_route) < route_length(best_alt)) {
+            best_alt = alt_route;
+        }
+    }
+    return best_alt;
+}
+
+function route_fd_for_increment(fields, path_names, stone_list, field_delays, target_increment, min_frames = null, start_field = 0) {
     if (target_increment > 200) {
-        //waaay too far away, don't even attempt. wrapping around the bottom wouldn't be great anyway
+        //waaay too far away, don't even attempt.
         return false;
     }
-    console.log("begin");
-    let curr_min_frames = null;
+    let curr_min_frames = min_frames;
     let possible_alts = [];
-    for (let i = 0; i < fields.length; i++) {
+    for (let i = start_field; i < fields.length; i++) {
         let curr_increment = 0;
         let start_sl = [...stone_list];
         for (let j = 0; j < i; j++) { // go through the fields before the current one with no extra delay (can do this before the loop and just worry about screens during and after the current screen)
-            start_sl = process_field(fields[j], path_names[j], start_sl, field_delays[j])[0];
+            start_sl = process_field(fields[j], path_names[j], start_sl, field_delays[j]).stone_list;
         }
         let initial_increment = null;
         let frame_count = 0;
         let closest_increment = 0;
         let closest_increment_start_frame = 0;
         let closest_increment_length = 0;
-        while (curr_increment <= target_increment && (curr_increment === target_increment || curr_min_frames === null || frame_count <= curr_min_frames[0])) { // advance either until we get to the increment or we're slower than the best solution found so far
-            let curr_sl = [...start_sl];
-            let x = process_field(fields[i], path_names[i], curr_sl, field_delays[i] + frame_count); //go through the screen normally with no delay, then add the current amount of delay
-            curr_sl = x[0];
-            let incrs = [];
-            incrs.push(x[2]);
+        let current_field_increment = null;
+        let current_field_increment_frames = []; // the current field can have different increments that result in the same final increment, but may not always when we introduce alts
+        while (curr_increment <= target_increment && (curr_increment === target_increment || curr_min_frames === null || frame_count <= curr_min_frames[0].start)) { // advance either until we get to the increment or we're slower than the best solution found so far
+            let x = process_field(fields[i], path_names[i], start_sl, field_delays[i] + frame_count); //go through the screen normally with no delay, then add the current amount of delay
+            let curr_sl = x.stone_list;
+            let incrs = x.increments;
+            if (current_field_increment === null || current_field_increment !== incrs) {
+                current_field_increment = incrs;
+                current_field_increment_frames.push(frame_count);
+            }
             for (let j = i + 1; j < fields.length; j++) { // go through the fields after the current one with no extra delay
                 let y = process_field(fields[j], path_names[j], curr_sl, field_delays[j]);
-                curr_sl = y[0];
-                incrs.push(y[2]);
+                curr_sl = y.stone_list;
+                incrs += y.increments;
             }
             if (initial_increment === null) {
-                initial_increment = incrs.reduce((a, b) => a + b);
+                initial_increment = incrs;
             } else {
-                curr_increment = incrs.reduce((a, b) => a + b) - initial_increment;
+                curr_increment = incrs - initial_increment;
             }
             if (curr_increment > target_increment) { // we went too far, exit and use the data currently in closest_increment variables
                 break;
@@ -197,30 +254,41 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
                 closest_increment = curr_increment;
                 closest_increment_start_frame = frame_count;
                 closest_increment_length = 0;
+                current_field_increment_frames = [];
             }
             if (curr_increment === closest_increment) { // advance frames on the closest increment
-                closest_increment_length += x[3];
+                closest_increment_length += x.last_delay;
             }
-            if (curr_increment <= target_increment) { // not yet at the target increment
-                frame_count += x[3];
-            }
+            frame_count += x.last_delay; // not yet at the target increment
         }
-        if (curr_min_frames !== null && (frame_count > curr_min_frames[0])) { //you're too slow!
-            console.log(i + " was too slow");
+        if (curr_min_frames !== null && (closest_increment_start_frame > curr_min_frames[0].start)) { // you're too slow!
             continue;
         }
+        current_field_increment_frames.pop();
+        let manip_data = [{
+            "start": closest_increment_start_frame,
+            "length": closest_increment_length,
+            "increments": closest_increment,
+            "target_increment": target_increment,
+            "increments_off": target_increment - closest_increment,
+            "field": i,
+            "path_name": path_names[i],
+            "start_sl": start_sl,
+            "current_field_increment_frames": current_field_increment_frames
+        }]
         if (target_increment === closest_increment) {
-            curr_min_frames = [closest_increment_start_frame, closest_increment_length, target_increment - closest_increment, i];
-            console.log("new min:");
-            console.log([closest_increment_start_frame, closest_increment_length, target_increment - closest_increment, i]);
-        } else {
-            possible_alts.push([closest_increment_start_frame, closest_increment_length, target_increment - closest_increment, i]);
-            console.log("alt:");
-            console.log([closest_increment_start_frame, closest_increment_length, target_increment - closest_increment, i]);
+            curr_min_frames = manip_data;
+        } else if (closest_increment_start_frame !== 0) { // it's not exactly a possible alternative candidate if you wait zero frames
+            possible_alts.push(manip_data);
         }
-        // console.log(curr_min_frames);
     }
-    console.log("end");
+    if (possible_alts.length > 0) {
+        let possible_alt = route_alts(possible_alts, fields, path_names, stone_list, field_delays, target_increment);
+        let alt_frames = route_length(possible_alt);
+        if (possible_alt !== null && alt_frames < curr_min_frames[0].start) {
+            curr_min_frames = possible_alt;
+        }
+    }
     console.log("min frames:")
     console.log(curr_min_frames)
     console.log("possible alts:")
@@ -322,7 +390,6 @@ function add_field(field = "CC", path = "NP", steps = 0, frames = 0) {
     elem.append(nc_screen_select);
     let nc_path_select = $("<select class='nc-path-select'>");
     for (let i = 0; i < Object.keys(f.paths).length; i++) {
-        let p = f.paths[f.paths_list[i]];
         let optn = $("<option>");
         optn.text(f.paths_list[i]);
         if (f.paths_list[i] === path) {
@@ -420,7 +487,7 @@ function timer_calculate() {
         }
         let field_ = fields_map[field_name];
         fields[i] = field_;
-        sl = process_field(field_, path_name, sl, frames)[0];
+        sl = process_field(field_, path_name, sl, frames).stone_list;
         path_names[i] = path_name;
         field_delays[i] = frames;
     }
@@ -440,10 +507,14 @@ function timer_calculate() {
             tr.addClass("manip_option");
             console.log("fd manip for new lowest: " + battle_count);
             let fd_route = route_fd_for_increment(fields_list, path_names, initial_sl, field_delays, i - output_before_current_list);
+            fd_route = fix_lengths(fd_route, fields_list, fd_route[0].target_increment);
             if (fd_route !== null && fd_route !== false) {
-                let fd_route_text = `${battle_count}: ${fields[fd_route[3]].name}${path_names[fd_route[3]]}: Wait ${(fd_route[0] / 30).toFixed(2)}-${((fd_route[0] + fd_route[1] - 1) / 30).toFixed(2)} sec. (${fd_route[0]}-${fd_route[0] + fd_route[1] - 1} frames)`;
+                let fd_route_text = `${battle_count}:`;
+                for (let j = 0; j < fd_route.length; j++) {
+                    fd_route_text += `<br>${fields[fd_route[j].field].name}${path_names[fd_route[j].field]}: Wait ${(fd_route[j].start / 30).toFixed(2)}-${((fd_route[j].start + fd_route[j].length - 1) / 30).toFixed(2)} sec. (${fd_route[j].start}-${fd_route[j].start + fd_route[j].length - 1} frames)`;
+                }
                 let manip_list_item = $("<li>");
-                manip_list_item.text(fd_route_text);
+                manip_list_item.html(fd_route_text);
                 manip_list.append(manip_list_item);
             }
             current_lowest = battle_count;
