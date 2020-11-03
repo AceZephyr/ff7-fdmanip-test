@@ -304,10 +304,10 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
             curr_min_frames = possible_alt;
         }
     }
-    console.log("min frames:")
-    console.log(curr_min_frames)
-    console.log("possible alts:")
-    console.log(possible_alts);
+    // console.log("min frames:")
+    // console.log(curr_min_frames)
+    // console.log("possible alts:")
+    // console.log(possible_alts);
     return curr_min_frames;
 }
 
@@ -511,10 +511,12 @@ function timer_calculate() {
     let current_lowest = null;
     let manip_list = $("<ul>");
     let manip_targets = {};
+    let num_of_each_battle = new Array(PLATFORMS + 1).fill(0)
     for (let i = 0; i < RNG.length; i++) {
         let currSL = [sl[0], mod(sl[1] + ((i - output_before_current_list) * sl[0]), RNG.length)];
         let fd = fd_from_stone_list(currSL);
         let battle_count = fd.reduce((a, b) => a + b);
+        num_of_each_battle[battle_count] += 1;
         let tr = $("<tr>");
         if (i === output_before_current_list) {
             tr.addClass("this_list");
@@ -546,6 +548,15 @@ function timer_calculate() {
             tr.append(enka);
         }
         tbody.append(tr);
+    }
+    if (num_of_each_battle.reduce((a,b) => a+b) !== RNG.length) {
+        alert('error: sum of all stats values not equal to number of list entries');
+    } else {
+        let stats_tbody = $("<tbody>");
+        for (let i = 0; i < num_of_each_battle.length; i++) {
+            stats_tbody.append($("<tr>").append($("<th>").text(i)).append($("<td>").text(num_of_each_battle[i])).append($("<td>").append((num_of_each_battle[i] / RNG.length * 100).toFixed(1) + "%")));
+        }
+        $("#stone-stats").html($("<table>").append("<thead><tr><th>Encs</th><th>#</th><th>%</th></tr></thead>").append(stats_tbody));
     }
     for (const battle_count of Object.keys(manip_targets).map(a => parseInt(a)).sort().reverse()) {
         let target_increments = manip_targets[battle_count];
