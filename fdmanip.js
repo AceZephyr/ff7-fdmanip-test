@@ -211,7 +211,7 @@ function fix_lengths(route, fields, path_names, start_sl, field_delays, __target
             stone_list = pf.stone_list;
             new_route[i] = {
                 "manip": false,
-                "start": field_delays[i],
+                "start": 0,
                 "length": pf.frames_to_next_increment,
                 "increments": pf.increments,
                 "target_increment": null,
@@ -238,11 +238,11 @@ function fix_lengths(route, fields, path_names, start_sl, field_delays, __target
             const incr = starting_incrs[j];
             const list = (starting_list + stone * incr) % RNG.length;
             const sl = [stone, list];
-            const length = curr_route_field.length;
+            const length = curr_route_field.length + field_delays[i];
             let incr_data = {};
             let next_delay = field_delays[i];
             // for each delay
-            for (let k = 0; next_delay < length + field_delays[i]; k++) {
+            for (let k = 0; next_delay < length; k++) {
                 const pf = process_field(fields[fidx], path_names[fidx], sl, next_delay);
                 const total_increments = starting_incrs[j] + pf.increments;
                 const delay_length = Math.min(pf.frames_to_next_increment, length - next_delay);
@@ -331,7 +331,6 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
         }
         let initial_increment = null;
         let frame_count = 0;
-
         let closest_increment = 0;
         let closest_increment_start_frame = 0;
         let closest_increment_length = 0;
@@ -561,6 +560,7 @@ function reset_timer() {
 
 const output_before_current_list = 5;
 const truncate_input = 11;
+const max_incrs = 20
 
 function timer_calculate() {
     let input = input_box.value.replaceAll(" ", "");
@@ -628,7 +628,7 @@ function timer_calculate() {
         }
         if (current_lowest !== null) {
             for (let j = battle_count; manip_targets[j] !== undefined; j++) {
-                if (manip_targets[j].size < 10) {
+                if (manip_targets[j].size < max_incrs) {
                     manip_targets[j].add(i - output_before_current_list);
                 }
             }
