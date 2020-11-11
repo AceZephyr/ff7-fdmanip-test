@@ -153,10 +153,31 @@ function process_field(field, path_name, stone_list, delay) {
     if (last_delay === null) {
         last_delay = Math.min(...anim_timers.map(x => Math.abs(x)));
     }
+    let go = true;
+    let f2ni = last_delay;
+    while (go) { // find frames to next increment
+        const frame_increment = Math.min(...anim_timers.map(timer => Math.abs(timer)));
+        for (let i = 0; go && i < anim_timers.length; i++) {
+            if (anim_timers[i] === frame_increment) {
+                go = false;
+                break;
+            } else if (anim_timers[i] === -frame_increment) {
+                anim_timers[i] = field.animations[i].frames;
+            } else {
+                if (anim_timers[i] > 0) {
+                    anim_timers[i] -= frame_increment;
+                } else {
+                    anim_timers[i] += frame_increment;
+                }
+            }
+        }
+        f2ni += frame_increment;
+    }
     return {
         "stone_list": [stone, curr_list],
         "increments": increments,
-        "last_delay": last_delay
+        "last_delay": last_delay,
+        "frames_to_next_increment": f2ni
     };
 }
 
@@ -171,26 +192,100 @@ function route_length(route) {
     return len;
 }
 
-function fix_lengths(route, fields, target_increment, start_index = 0) { // sometimes, the full length of a step won't work because it joins multiple increments that each work on their own, but in the full route, not all work. the first increment of each step will always work.
-    if (route.length - start_index <= 1) {
-        return route;
-    }
-    let first_field_increment = route[start_index].increments;
-    for (let i = start_index; i < route[start_index].current_field_increment_frames.length; i++) {
-        let asdf = process_field(fields[route[start_index].field], route[start_index].path_name, route[start_index].start_sl, route[start_index].current_field_increment_frames[i]);
-        let increments = asdf.increments;
-        let stone_list = asdf.stone_list;
-        for (let j = 1; j < route.length; j++) {
-            asdf = process_field(fields[route[j].field], route[j].path_name, stone_list, route[j].start);
-            increments += asdf.increments;
-            stone_list = asdf.stone_list;
+// sometimes, the full length of a step won't work because it joins multiple increments that each work on their own,
+// but in the full route, not all work. the first increment of each step will always work.
+// this method fixes those lengths so they should always work.
+function fix_lengths(route, fields, path_names, start_sl, field_delays, __target_increments) {
+    const stone = start_sl[0];
+    const starting_list = start_sl[1];
+    let stone_list = [...start_sl];
+    let new_route = new Array(fields.length);
+    //Construct a route array consisting of all the fields with no manipulation for the non-manipped fields, so their length can be modified
+    for (let i = 0, curr_route = 0; i < fields.length; i++) {
+        if (curr_route < route.length && route[curr_route].field === i) { // field is present in route
+            new_route[i] = Object.assign({}, route[curr_route++]);
+        } else { // field is not present in route, is non-manipped.
+            const field = fields[i];
+            const path_name = path_names[i];
+            let pf = process_field(field, path_name, stone_list, field_delays[i]);
+            stone_list = pf.stone_list;
+            new_route[i] = {
+                "manip": false,
+                "start": field_delays[i],
+                "length": pf.frames_to_next_increment,
+                "increments": pf.increments,
+                "target_increment": null,
+                "increments_off": null,
+                "field": i,
+                "path_name": path_names[i],
+                "start_sl": null,
+                "current_field_increment_frames": null,
+                "current_field_list_vals": null
+            }
         }
-        if (!target_increment.has(increments)) { // doesn't work! after this frame is the end of the window that works.
-            route[start_index].length = route[start_index].current_field_increment_frames[i] - route[start_index].start;
-            break;
-        }
     }
-    return fix_lengths(route, fields, [...target_increment].map(a => a - first_field_increment), start_index + 1);
+    let data = [new_route.length];
+    let starting_incrs = [0];
+    //loop through fields
+    for (let i = 0; i < new_route.length; i++) {
+        const curr_route_field = new_route[i];
+        const fidx = curr_route_field.field;
+        let field_data = {};
+        let ending_incrs = new Set();
+        // let least_incr_diff = null;
+        // for each possible starting increment
+        for (let j = 0; j < starting_incrs.length; j++) {
+            const incr = starting_incrs[j];
+            const list = (starting_list + stone * incr) % RNG.length;
+            const sl = [stone, list];
+            const length = curr_route_field.length;
+            let incr_data = {};
+            let next_delay = field_delays[i];
+            // for each delay
+            for (let k = 0; next_delay < length + field_delays[i]; k++) {
+                const pf = process_field(fields[fidx], path_names[fidx], sl, next_delay);
+                const total_increments = starting_incrs[j] + pf.increments;
+                const delay_length = Math.min(pf.frames_to_next_increment, length - next_delay);
+                incr_data[next_delay + curr_route_field.start] = [total_increments, delay_length];
+                next_delay += pf.frames_to_next_increment;
+                ending_incrs.add(total_increments);
+            }
+            field_data[starting_incrs[j]] = incr_data;
+        }
+        starting_incrs = [...ending_incrs].sort((a, b) => a - b);
+        data[i] = field_data;
+    }
+    const target_offset = Math.min(...starting_incrs) - Math.min(...__target_increments);
+    let target_increments = new Set([...__target_increments].map(a => a + target_offset));
+    console.log(data);
+    // iterate through fields in reverse, finding all the bad increments
+    for (let i = new_route.length - 1; i >= 0; i--) {
+        let _target_increments = new Set();
+        let field_length = null;
+        // iterate through all starting increments in order
+        for (let start_incr of Object.keys(data[i]).map(a => parseInt(a)).sort((a, b) => a - b)) {
+            let this_length = 0;
+            // iterate through all delays in order
+            for (let delay_frames of Object.keys(data[i][start_incr]).map(a => parseInt(a)).sort((a, b) => a - b)) {
+                const total_increments = data[i][start_incr][delay_frames][0];
+                const delay_length = data[i][start_incr][delay_frames][1];
+                if (target_increments.has(total_increments)) {
+                    _target_increments.add(start_incr);
+                    this_length += delay_length;
+                } else {
+                    break;
+                }
+            }
+            // if this delay's length is shorter, we can only go up to that length.
+            if (this_length > 0 && (field_length === null || this_length < field_length)) {
+                field_length = this_length;
+            }
+        }
+        new_route[i].length = field_length;
+        target_increments = _target_increments;
+    }
+    // console.log(new_route);
+    return new_route;
 }
 
 function route_alts(possible_alts, fields, path_names, stone_list, field_delays, target_increment) {
@@ -241,14 +336,16 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
         let closest_increment_start_frame = 0;
         let closest_increment_length = 0;
         let current_field_increment = null;
-        let current_field_increment_frames = []; // the current field can have different increments that result in the same final increment, but may not always when we introduce alts
+        let current_field_list_vals = {};
         while (curr_increment <= min_target_increment && (curr_increment <= max_target_increment || curr_min_frames === null || frame_count <= curr_min_frames[0].start)) { // advance either until we get to the increment or we're slower than the best solution found so far
             let x = process_field(fields[i], path_names[i], start_sl, field_delays[i] + frame_count); //go through the screen normally with no delay, then add the current amount of delay
             let curr_sl = x.stone_list;
             let incrs = x.increments;
             if (current_field_increment === null || current_field_increment !== incrs) {
                 current_field_increment = incrs;
-                current_field_increment_frames.push(frame_count);
+                if (!Object.values(current_field_list_vals).includes(x.stone_list[1])) {
+                    current_field_list_vals[frame_count] = x.stone_list[1];
+                }
             }
             for (let j = i + 1; j < fields.length; j++) { // go through the fields after the current one with no extra delay
                 let y = process_field(fields[j], path_names[j], curr_sl, field_delays[j]);
@@ -259,7 +356,6 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
                 initial_increment = incrs;
             } else {
                 curr_increment = incrs - initial_increment;
-                // all_increments.add(curr_increment);
             }
             if (curr_increment > max_target_increment || (target_increment.has(closest_increment) && !target_increment.has(curr_increment))) { // end of the window, exit and use the data currently in closest_increment variables
                 break;
@@ -268,7 +364,8 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
                 closest_increment = curr_increment;
                 closest_increment_start_frame = frame_count;
                 closest_increment_length = 0;
-                current_field_increment_frames = [];
+                current_field_list_vals = {};
+                current_field_list_vals[frame_count] = x.stone_list[1];
             }
             if (curr_increment === closest_increment || (target_increment.has(curr_increment) && target_increment.has(closest_increment))) {
                 // advance frames on the closest increment if we are within the window of target_increment
@@ -279,8 +376,10 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
         if (curr_min_frames !== null && (closest_increment_start_frame > curr_min_frames[0].start)) { // you're too slow!
             continue;
         }
+        let current_field_increment_frames = Object.keys(current_field_list_vals).map(a => parseInt(a));
         current_field_increment_frames.pop();
         let manip_data = [{
+            "manip": true,
             "start": closest_increment_start_frame,
             "length": closest_increment_length,
             "increments": closest_increment,
@@ -289,7 +388,8 @@ function route_fd_for_increment(fields, path_names, stone_list, field_delays, ta
             "field": i,
             "path_name": path_names[i],
             "start_sl": start_sl,
-            "current_field_increment_frames": current_field_increment_frames
+            "current_field_increment_frames": current_field_increment_frames,
+            "current_field_list_vals": current_field_list_vals
         }]
         if (target_increment.has(closest_increment)) {
             curr_min_frames = manip_data;
@@ -549,7 +649,7 @@ function timer_calculate() {
         }
         tbody.append(tr);
     }
-    if (num_of_each_battle.reduce((a,b) => a+b) !== RNG.length) {
+    if (num_of_each_battle.reduce((a, b) => a + b) !== RNG.length) {
         alert('error: sum of all stats values not equal to number of list entries');
     } else {
         let stats_tbody = $("<tbody>");
@@ -562,10 +662,34 @@ function timer_calculate() {
         let target_increments = manip_targets[battle_count];
         let fd_route = route_fd_for_increment(fields_list, path_names, initial_sl, field_delays, target_increments);
         if (fd_route !== null && fd_route !== false) {
-            fd_route = fix_lengths(fd_route, fields_list, target_increments);
+            fd_route = fix_lengths(fd_route, fields_list, path_names, initial_sl, field_delays, target_increments);
             let fd_route_text = `${battle_count}:`;
-            for (let j = 0; j < fd_route.length; j++) {
-                fd_route_text += `<br>${fields[fd_route[j].field].name}${path_names[fd_route[j].field]}: Wait ${(fd_route[j].start / 30).toFixed(2)}-${((fd_route[j].start + fd_route[j].length - 1) / 30).toFixed(2)} sec. (${fd_route[j].start}-${fd_route[j].start + fd_route[j].length - 1} frames)`;
+            let j = 0;
+            let sl = [...initial_sl];
+            let lists = new Set();
+            lists.add(initial_sl[1]);
+            for (let k = 0; k < fields.length; k++) { // loop through all fields
+                if (j < fd_route.length && fd_route[j].field === k) { // is the current field part of the manip?
+                    // put the next step here
+                    fd_route_text += `<br>${fields[k].name}${path_names[k]}: Wait ${(fd_route[j].start / 30).toFixed(2)}-${((fd_route[j].start + fd_route[j].length - 1) / 30).toFixed(2)} sec. (${fd_route[j].start}-${fd_route[j].start + fd_route[j].length - 1} frames)`;
+                    sl = fd_route[j].stone_list;
+                    j++;
+                } else { // no manip on this, instead calculate and show leniency on this screen
+                    let new_lists = {}; // {old list: [new list, frames of leniency]}
+                    let min_f2ni = null;
+                    for (const listval of lists) {
+                        let x = process_field(fields[k], path_names[k], [initial_sl[0], listval], field_delays[k]);
+                        new_lists[listval] = [x.frames_to_next_increment, x.stone_list[1]];
+                        if (min_f2ni === null || min_f2ni > x.frames_to_next_increment) {
+                            min_f2ni = x.frames_to_next_increment;
+                        }
+                    }
+                    lists.clear();
+                    for (const val of Object.values(new_lists)) {
+                        lists.add(val[0]);
+                    }
+                    fd_route_text += `<br>${fields[k].name}${path_names[k]} precision: ${min_f2ni} frames`;
+                }
             }
             let manip_list_item = $("<li>");
             manip_list_item.html(fd_route_text);
