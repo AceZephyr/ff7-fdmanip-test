@@ -735,7 +735,7 @@ function timer_calculate() {
     table.append(tbody);
     $("#manips-output").html(manip_list).prepend("<p>Here are ... my results!!</p>");
     $("#output").html(table);
-    $("#left, #right").css({"max-height": window.innerHeight - 8});
+    $("#output").css({"max-height": window.innerHeight - 8});
 }
 
 document.onkeydown = function (event) {
