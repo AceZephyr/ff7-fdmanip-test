@@ -194,7 +194,7 @@ function route_length(route) {
 
 // sometimes, the full length of a step won't work because it joins multiple increments that each work on their own,
 // but in the full route, not all work. the first increment of each step will always work.
-// this method fixes those lengths so they should always work.
+// this method fixes those lengths so they should always work, and constructs a full route from the partial route that route_fd_for_increment generates
 function fix_lengths(route, fields, path_names, start_sl, field_delays, __target_increments) {
     const stone = start_sl[0];
     const starting_list = start_sl[1];
@@ -485,7 +485,7 @@ function frames_input(event) {
     }
 }
 
-function add_field(field = "CC", path = "NP", steps = 0, frames = 0) {
+function add_field(field = "CC", path = "NP", steps = 0, frames = 0, delay = 0) {
     let elem = $("<div class='nc-field'>");
     let button = $("<button>✖</button>");
     button.on("click", field_remove);
@@ -522,13 +522,34 @@ function add_field(field = "CC", path = "NP", steps = 0, frames = 0) {
     elem.append(step_input);
     elem.append("<span> Frames: </span>");
     let frame_input = $("<input type='number' class='nc-frames-input'>");
-    step_input.on("input", frames_input);
+    frame_input.on("input", frames_input);
     if (frames > 0) {
         frame_input.val(frames);
     }
     elem.append(frame_input);
+    elem.append("<span> Delay: </span>");
+    let delay_input = $("<input type='number' class='nc-delay-input'>");
+    if (delay > 0) {
+        delay_input.val(delay);
+    }
+    elem.append(delay_input);
     $("#nc-input").append(elem);
     serialize_cookies();
+}
+
+function add_delay_to_field(field_index, field_name, path_name, frames) {
+    let field_html = $(`#nc-input>.nc-field:nth-child(${field_index+1})`);
+    // check field and path are still the same
+    if (field_name === field_html.find(".nc-screen-select").val() && path_name === field_html.find(".nc-path-select").val()) {
+        let current_delay = field_html.find(".nc-delay-input").val();
+        if (current_delay.length !== 0) {
+            current_delay = parseInt(current_delay);
+        } else {
+            current_delay = 0;
+        }
+        current_delay += parseInt(frames);
+        field_html.find(".nc-delay-input").val(current_delay);
+    }
 }
 
 let last_click = null;
@@ -590,16 +611,28 @@ function timer_calculate() {
         let fld = $(flds[i]);
         let field_name = fld.find(".nc-screen-select").val();
         let path_name = fld.find(".nc-path-select").val();
-        let frames = fld.find(".nc-frames-input").val();
-        if (frames.length === 0) {
-            frames = 0;
+        let frames_ = fld.find(".nc-frames-input").val();
+        let delay = fld.find(".nc-delay-input").val();
+
+        if (frames_.length === 0) {
+            frames_ = 0;
         } else {
-            frames = parseInt(frames);
-            if (Number.isNaN(frames)) {
+            frames_ = parseInt(frames_);
+            if (Number.isNaN(frames_)) {
                 alert("frames is not a number!");
                 return;
             }
         }
+        if (delay.length === 0) {
+            delay = 0;
+        } else {
+            delay = parseInt(delay);
+            if (Number.isNaN(delay)) {
+                alert("frames is not a number!");
+                return;
+            }
+        }
+        let frames = frames_ + delay;
         let field_ = fields_map[field_name];
         fields[i] = field_;
         sl = process_field(field_, path_name, sl, frames).stone_list;
@@ -671,7 +704,8 @@ function timer_calculate() {
             for (let k = 0; k < fields.length; k++) { // loop through all fields
                 if (j < fd_route.length && fd_route[j].field === k) { // is the current field part of the manip?
                     // put the next step here
-                    fd_route_text += `<br>${fields[k].name}${path_names[k]}: Wait ${(fd_route[j].start / 30).toFixed(2)}-${((fd_route[j].start + fd_route[j].length - 1) / 30).toFixed(2)} sec. (${fd_route[j].start}-${fd_route[j].start + fd_route[j].length - 1} frames)`;
+                    fd_route_text += `<br><button onclick="add_delay_to_field(${k}, '${fields[k].name}', '${path_names[k]}', '${fd_route[j].start + fd_route[j].length}')">Skip</button>`;
+                    fd_route_text += ` ${fields[k].name}${path_names[k]}: Wait ${(fd_route[j].start / 30).toFixed(2)}-${((fd_route[j].start + fd_route[j].length - 1) / 30).toFixed(2)} sec. (${fd_route[j].start}-${fd_route[j].start + fd_route[j].length - 1} frames)`;
                     sl = fd_route[j].stone_list;
                     j++;
                 } else { // no manip on this, instead calculate and show leniency on this screen
