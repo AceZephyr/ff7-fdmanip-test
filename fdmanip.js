@@ -45,18 +45,18 @@ const FIELD_CC = new Field([
 const FIELD_LJ = new Field([
     new Animation("L", 33, [240, 180, 120]),
     new Animation("R", 45, [240, 180, 120])
-], {"NS": 296, "NP": 316, "RV": 3}, ["NS", "NP", "RV"], "LJ");
+], {"NS": 296, "ZS": 267, "NP": 316, "RV": 3}, ["ZS", "NS", "NP", "RV"], "LJ");
 
 const FIELD_DS = new Field([
     new Animation("T", 19, [120, 120, 90, 60]),
     new Animation("M", 19, [90, 90, 60, 120]),
     new Animation("B", 19, [60, 60, 120, 90])
-], {"NP": 302, "UT": 92, "RV": 46}, ["NP", "UT", "RV"], "DS");
+], {"NP": 302, "ZH": 0, "UT": 92, "RV": 46}, ["NP", "ZH", "UT", "RV"], "DS");
 
 const FIELD_DT = new Field([
     new Animation("T", 10, [120, 120, 90, 60]),
     new Animation("M", 10, [90, 90, 60, 120])
-], {"NP": 475, "UT": 61, "NS": 468, "RV": 6}, ["NP", "UT", "NS", "RV"], "DT");
+], {"NP": 475, "ZH": 0, "UT": 61, "NS": 468, "RV": 6}, ["NP", "ZH", "UT", "NS", "RV"], "DT");
 
 const FIELD_FF = new Field([
     new Animation("X", 1, [90])
@@ -753,7 +753,7 @@ document.onkeydown = function (event) {
 
 if (document.cookie.length === 0) {
     add_field("CC", "NP");
-    add_field("LJ", "NS");
+    add_field("LJ", "ZS");
     add_field("DS", "NP");
     add_field("DT", "NP");
     add_field("FF", "NP");
